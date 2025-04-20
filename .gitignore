@@ -65,3 +65,4 @@ _ReSharper*/
 *.cache
 *.bak
 *.orig
+firebase-secret-key-file

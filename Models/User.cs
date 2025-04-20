@@ -13,5 +13,10 @@ namespace backend.Models
 		public string Password { get; set; } = null!;
 		public string Role { get; set; } = "Patient";
 		public bool IsProfileComplete { get; set; } = false;
+		public string? PhoneNumber { get; set; }
+		public string? Address { get; set; }
+		public int? Age { get; set; }
+		public string? Gender { get; set; }
+		public string MedicalHistory { get; set; }
 	}
 }

@@ -27,7 +27,7 @@ namespace backend.Controllers
 
 			if (await authService.UserExists(request.Email))
 			{
-				return BadRequest("User already exists");
+				return BadRequest(new { message = "User already exists" });
 			}
 
 			var user = new User
@@ -57,10 +57,19 @@ namespace backend.Controllers
 
 			if (response?.Token == null)
 			{
-				return Unauthorized("Invalid Credentials");
+				return Unauthorized(new { message = "Invalid Credentials" });
 			}
 
-			return Ok(new { response });
+			return Ok(new { 
+				Token = response.Token,
+				User = new
+				{
+					response.Id,
+					response.Name,
+					response.Email,
+					response.Role
+				}
+			});
 		}
 		public class LoginRequest
 		{

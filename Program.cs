@@ -3,7 +3,10 @@ using backend.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using MongoDB.Driver;
 using System.Text;
+using CloudinaryDotNet;
+using CloudinaryDotNet.Actions;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -40,11 +43,39 @@ builder.Services.AddSwaggerGen(c =>
 		}
 	});
 });
+builder.Services.AddCors(options =>
+{
+	options.AddPolicy("AllowFrontend",
+		policy =>
+		{
+			policy.WithOrigins("http://localhost:5173") // Your frontend's URL
+				  .AllowAnyHeader()
+				  .AllowAnyMethod()
+				  .AllowCredentials(); // If you're using cookies
+		});
+});
 
 builder.Services.Configure<MongoDbSettings>(builder.Configuration.GetSection("MongoDBSettings"));
+builder.Services.AddSingleton<IMongoDatabase>(sp =>
+{
+	var configuration = sp.GetRequiredService<IConfiguration>();
+	var mongoSettings = configuration.GetSection("MongoDBSettings").Get<MongoDbSettings>();
 
+	var client = new MongoClient(mongoSettings.ConnectionString);
+	return client.GetDatabase(mongoSettings.DatabaseName);
+});
 builder.Services.AddSingleton<UserService>();
 builder.Services.AddSingleton<AuthService>();
+builder.Services.AddSingleton(provider =>
+{
+	var cloudinary = new Cloudinary(new Account(
+		builder.Configuration["Cloudinary:CloudName"],
+		builder.Configuration["Cloudinary:ApiKey"],
+		builder.Configuration["Cloudinary:ApiSecret"]
+	));
+	return cloudinary;
+});
+builder.Services.AddSingleton<DiagnosisService>();
 
 var key = Encoding.ASCII.GetBytes(builder.Configuration["Jwt:Key"]);
 builder.Services.AddAuthentication(options =>
@@ -74,7 +105,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-
+app.UseCors("AllowFrontend");
 app.UseAuthentication();
 app.UseAuthorization();
 
