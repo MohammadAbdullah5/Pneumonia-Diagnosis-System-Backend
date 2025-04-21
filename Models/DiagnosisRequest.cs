@@ -10,9 +10,13 @@ namespace backend.Models
 		public string Id { get; set; }
 		public string UserId { get; set; } = null!;
 		public string ImageUrl { get; set; }
+		public string AudioUrl { get; set; }
 		public string Symptoms { get; set; }
 		public string Status { get; set; } = "Pending";
+		public string Remarks { get; set; }
+		public string FinalDiagnosis { get; set; }
 		public DateTime SubmittedAt { get; set; } = DateTime.UtcNow;
+		public DateTime DiagnosedAt { get; set; }
 	}
 
 }
