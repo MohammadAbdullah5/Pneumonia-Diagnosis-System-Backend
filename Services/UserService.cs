@@ -36,5 +36,11 @@ namespace backend.Services
 			var result = await _users.DeleteOneAsync(u => u.Email == email);
 			return result.DeletedCount > 0;
 		}
+
+		public async Task<User> GetUserByDiagnosis(string diagnosisId)
+		{
+			var user = await _users.Find(u => u.Id == diagnosisId).FirstOrDefaultAsync();
+			return user;
+		}
 	}
 }

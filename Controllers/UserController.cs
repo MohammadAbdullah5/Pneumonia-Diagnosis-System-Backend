@@ -17,10 +17,14 @@ namespace backend.Controllers
 			_userService = userService;
 		}
 
+		[Authorize]
 		[HttpGet]
-		public async Task<List<User>> Get()
+		public async Task<IActionResult> Get()
 		{
-			return await _userService.GetAsync();
+			var role = User.FindFirst(ClaimTypes.Role)?.Value;
+			if (role != "admin") return Forbid("Admins only");
+
+			return Ok(await _userService.GetAsync());
 		}
 
 		[HttpPost]
@@ -37,6 +41,9 @@ namespace backend.Controllers
 		[HttpPatch("profile")]
 		public async Task<IActionResult> CompleteProfile([FromBody] CompleteProfileRequest request)
 		{
+			var role = User.FindFirst(ClaimTypes.Role)?.Value;
+			if (role != "patient") return Forbid("Patients only");
+
 			var userId = User.FindFirstValue(ClaimTypes.NameIdentifier); 
 			if (userId == null) return Unauthorized();
 
@@ -56,9 +63,13 @@ namespace backend.Controllers
 			return Ok(new { message = "Profile completed successfully" });
 		}
 
+		[Authorize]
 		[HttpDelete("delete")]
 		public async Task<IActionResult> DeleteUser(string email)
 		{
+			var role = User.FindFirst(ClaimTypes.Role)?.Value;
+			if (role != "admin") return Forbid("Admins only");
+
 			bool deleted = await _userService.DeleteUserByEmailAsync(email);
 			if (!deleted)
 				return NotFound("User not found.");
@@ -73,7 +84,8 @@ namespace backend.Controllers
 		{
 			try
 			{
-				// Assuming the user's ID is stored in the JWT token
+				var role = User.FindFirst(ClaimTypes.Role)?.Value;
+				if (role != "patient") return Forbid("Patient only");
 				var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
 				if (string.IsNullOrEmpty(userId))

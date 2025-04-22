@@ -8,10 +8,14 @@ namespace backend.Services
 	public class DiagnosisService
 	{
 		private readonly IMongoCollection<DiagnosisRequest> _diagnosisCollection;
+		private readonly UserService _userService;
+		private readonly IEmailService _emailService;
 
-		public DiagnosisService(IMongoDatabase database)
+		public DiagnosisService(IMongoDatabase database, IEmailService emailService, UserService userService, IMongoCollection<User> userCollection)
 		{
 			_diagnosisCollection = database.GetCollection<DiagnosisRequest>("Diagnoses");
+			_emailService = emailService;
+			_userService = userService;
 		}
 
 		public async Task SaveDiagnosisAsync(DiagnosisRequest diagnosisRequest)
@@ -107,14 +111,83 @@ namespace backend.Services
 			}
 
 			var result = await response.Content.ReadFromJsonAsync<AIDiagnosisResponse>();
+
 			if (result == null)
 			{
 				throw new Exception("No response from model");
 			}
+			var confidencePercent = CalculateConfidencePercentage(result.Score);
 
-			return result;
+			return new AIDiagnosisResponse { Prediction = result.Prediction, Score = confidencePercent };
 		}
 
+		public async Task SendDiagnosisNotificationEmail(string diagnosisId)
+		{
+			var diagnosis = await _diagnosisCollection.Find(d => d.Id == diagnosisId).FirstOrDefaultAsync();
+			if (diagnosis == null)
+			{
+				throw new Exception("Diagnosis not found for email notification.");
+			}
+
+			var user = await _userService.GetAsync(diagnosis.UserId);
+			if (user == null || string.IsNullOrEmpty(user.Email))
+			{
+				throw new Exception("User not found or email is missing.");
+			}
+
+			string subject = "Your Diagnosis Has Been Reviewed";
+			string body = $@"
+        Dear {user.Name}, 
+
+        Your recent pneumonia diagnosis has been reviewed by one of our doctors. 
+
+
+        Thank you for using PneumoScan!
+
+        Best regards,
+        PneumoScan Team";
+
+			await _emailService.SendEmailAsync(user.Email, subject, body);
+		}
+
+		public async Task<List<DiagnosisRequest>> GetDiagnosedReportsByUserAsync(string userId)
+		{
+			var filter = Builders<DiagnosisRequest>.Filter.And(
+				Builders<DiagnosisRequest>.Filter.Eq(r => r.UserId, userId),
+				Builders<DiagnosisRequest>.Filter.Ne(r => r.FinalDiagnosis, null)
+			);
+
+			return await _diagnosisCollection
+				.Find(filter)
+				.SortByDescending(r => r.DiagnosedAt)
+				.ToListAsync();
+		}
+
+		public async Task<List<object>> GetAllDiagnosisReportsAsync()
+		{
+			var diagnoses = await _diagnosisCollection.Find(_ => true).ToListAsync();
+			var reports = new List<object>();
+
+			foreach (var diagnosis in diagnoses)
+			{
+				var user = await _userService.GetUserByDiagnosis(diagnosis.UserId);
+
+				if (user != null)
+				{
+					reports.Add(new
+					{
+						Id = diagnosis.Id,
+						PatientName = user.Name,
+						Age = user.Age ?? 0,
+						Gender = user.Gender ?? "Unknown",
+						Diagnosis = diagnosis.FinalDiagnosis ?? "Not Available",
+						DiagnosedOn = diagnosis.SubmittedAt.ToString("yyyy-MM-dd") ?? "Pending"
+					});
+				}
+			}
+
+			return reports;
+		}
 
 
 		public async Task MarkAsDiagnosed(string diagnosisId, string finalDiagnosis, string remarks)
@@ -133,7 +206,14 @@ namespace backend.Services
 				throw new Exception("Diagnosis not found");
 			}
 		}
+		public float CalculateConfidencePercentage(float score)
+		{
+			float distanceFromCenter = Math.Abs(score - 0.5f);
+			float confidence = distanceFromCenter * 2; // Normalize to range [0, 1]
+			return (float)Math.Round(confidence * 100, 2); // Convert to percentage
+		}
 	}
+
 
 	public class AIDiagnosisResponse
 	{

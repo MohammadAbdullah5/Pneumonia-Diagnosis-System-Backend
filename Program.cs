@@ -55,7 +55,9 @@ builder.Services.AddCors(options =>
 		});
 });
 
+
 builder.Services.Configure<MongoDbSettings>(builder.Configuration.GetSection("MongoDBSettings"));
+builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("EmailSettings"));
 builder.Services.AddSingleton<IMongoDatabase>(sp =>
 {
 	var configuration = sp.GetRequiredService<IConfiguration>();
@@ -75,7 +77,21 @@ builder.Services.AddSingleton(provider =>
 	));
 	return cloudinary;
 });
-builder.Services.AddSingleton<DiagnosisService>();
+builder.Services.AddScoped<DiagnosisService>();
+builder.Services.AddScoped<DoctorService>();
+builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddSingleton<IMongoCollection<User>>(sp =>
+{
+	var database = sp.GetRequiredService<IMongoDatabase>();
+	return database.GetCollection<User>("Users");
+});
+
+builder.Services.AddSingleton<IMongoCollection<DiagnosisRequest>>(sp =>
+{
+	var database = sp.GetRequiredService<IMongoDatabase>();
+	return database.GetCollection<DiagnosisRequest>("DiagnosisRequests");
+});
+
 
 var key = Encoding.ASCII.GetBytes(builder.Configuration["Jwt:Key"]);
 builder.Services.AddAuthentication(options =>
@@ -90,6 +106,7 @@ builder.Services.AddAuthentication(options =>
 		ValidateIssuer = false,
 		ValidateAudience = false,
 		ValidateIssuerSigningKey = true,
+		ValidateLifetime = true,
 		IssuerSigningKey = new SymmetricSecurityKey(key)
 	};
 });

@@ -2,8 +2,11 @@
 using backend.Services;
 using CloudinaryDotNet;
 using CloudinaryDotNet.Actions;
+using Microsoft.AspNetCore.Authorization.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
 
 public class DiagnosisController : ControllerBase
 {
@@ -15,9 +18,13 @@ public class DiagnosisController : ControllerBase
 		_service = diagnosisService;
 	}
 
+	[Authorize]
 	[HttpPost("submit-diagnosis")]
 	public async Task<IActionResult> SubmitDiagnosis(IFormFile file, string symptoms, string userId, IFormFile audio)
 	{
+		var role = User.FindFirst(ClaimTypes.Role)?.Value;
+		if (role != "patient") return Forbid("Access denied. Patients only.");
+
 		if (file == null || file.Length == 0)
 			return BadRequest(new { message = "No file uploaded." });
 		if (audio == null || audio.Length == 0)
@@ -61,18 +68,24 @@ public class DiagnosisController : ControllerBase
 		}
 	}
 
+	[Authorize]
 	[HttpGet("pending")]
 	public async Task<IActionResult> GetPending()
 	{
+		var role = User.FindFirst(ClaimTypes.Role)?.Value;
+		if (role != "doctor") return Forbid("Access denied. Doctor only.");
 		var diagnoses = await _service.GetPendingDiagnosis();
 		return Ok(diagnoses);
 	}
 
+	[Authorize]
 	[HttpGet("ai-suggestion/{id}")]
 	public async Task<IActionResult> AnalyzeImage(string id)
 	{
 		try
 		{
+			var role = User.FindFirst(ClaimTypes.Role)?.Value;
+			if (role != "doctor") return Forbid("Access denied. Doctor only.");
 			var diagnosis = await _service.GetById(id);
 			var aiResult = await _service.GetAIAnalysis(diagnosis.ImageUrl);
 			return Ok(new { Diagnosis = aiResult });
@@ -83,12 +96,65 @@ public class DiagnosisController : ControllerBase
 		}
 	}
 
+	[Authorize]
 	[HttpPost("submit")]
 	public async Task<IActionResult> SubmitDoctorDiagnosis([FromBody] SubmitDiagnosisDto dto)
 	{
-		await _service.MarkAsDiagnosed(dto.DiagnosisId, dto.Diagnosis, dto.Remarks);
-		return Ok(new { message = "Diagnosis submitted" });
+		try
+		{
+			var role = User.FindFirst(ClaimTypes.Role)?.Value;
+			if (role != "doctor") return Forbid("Access denied. Doctor only.");
+			await _service.MarkAsDiagnosed(dto.DiagnosisId, dto.Diagnosis, dto.Remarks);
+			await _service.SendDiagnosisNotificationEmail(dto.DiagnosisId);
+			return Ok(new { message = "Diagnosis submitted" });
+		}
+
+		catch (Exception ex)
+		{
+			return StatusCode(500, new { Error = ex.Message });
+		}
 	}
+
+	[HttpGet("my-reports")]
+	[Authorize]
+	public async Task<IActionResult> GetMyDiagnosedReports()
+	{
+		try
+		{
+			var role = User.FindFirst(ClaimTypes.Role)?.Value;
+			if (role != "patient") return Forbid("Access denied. Patients only.");
+			var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+			if (string.IsNullOrEmpty(userId))
+				return Unauthorized("Invalid user.");
+
+			var reports = await _service.GetDiagnosedReportsByUserAsync(userId);
+
+			var result = reports.Select(r => new
+			{
+				id = r.Id,
+				diagnosis = r.FinalDiagnosis,
+				remarks = r.Remarks,
+				diagnosedAt = r.DiagnosedAt
+			});
+
+			return Ok(result);
+		}
+		catch (Exception ex)
+		{
+			return StatusCode(500, new { Message = ex.Message });
+		}
+	}
+
+	[HttpGet("reports")]
+	public async Task<IActionResult> GetDiagnosisReports()
+	{
+		var role = User.FindFirst(ClaimTypes.Role)?.Value;
+		if (role != "doctor") return Forbid("Access denied. Doctor only.");
+		var reports = await _service.GetAllDiagnosisReportsAsync();
+		return Ok(reports);
+	}
+
 
 	public class SubmitDiagnosisDto
 	{
