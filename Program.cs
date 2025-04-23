@@ -67,7 +67,8 @@ builder.Services.AddSingleton<IMongoDatabase>(sp =>
 	return client.GetDatabase(mongoSettings.DatabaseName);
 });
 builder.Services.AddSingleton<UserService>();
-builder.Services.AddSingleton<AuthService>();
+builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<AuthService>();
 builder.Services.AddSingleton(provider =>
 {
 	var cloudinary = new Cloudinary(new Account(
@@ -79,7 +80,6 @@ builder.Services.AddSingleton(provider =>
 });
 builder.Services.AddScoped<DiagnosisService>();
 builder.Services.AddScoped<DoctorService>();
-builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddSingleton<IMongoCollection<User>>(sp =>
 {
 	var database = sp.GetRequiredService<IMongoDatabase>();

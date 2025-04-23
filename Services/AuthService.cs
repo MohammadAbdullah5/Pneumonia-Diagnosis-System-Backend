@@ -15,14 +15,19 @@ namespace backend.Services
 	{
 		private readonly IMongoCollection<User> _users;
 		private readonly IConfiguration _config;
+		private readonly IMongoCollection<TwoFactorCode> _mfaCodes;
+		private readonly IEmailService _emailService;
 
-		public AuthService(IOptions<MongoDbSettings> options, IConfiguration config)
+		public AuthService(IOptions<MongoDbSettings> options, IConfiguration config, IEmailService service)
 		{
 			var client = new MongoClient(options.Value.ConnectionString);
 			var database = client.GetDatabase(options.Value.DatabaseName);
 			_users = database.GetCollection<User>("Users");
+			_mfaCodes = database.GetCollection<TwoFactorCode>("MfaCodes");
 			_config = config;
+			_emailService = service;
 		}
+
 
 		public async Task<bool> UserExists(string email)
 		{
@@ -70,12 +75,29 @@ namespace backend.Services
 			return Convert.ToBase64String(sha.ComputeHash(bytes));
 		}
 
-		private bool VerifyPassword(string inputPassword, string storedPassword)
+		public bool VerifyPassword(string inputPassword, string storedPassword)
 		{
 			return HashPassword(inputPassword) == storedPassword;
 		}
 
-		private string GenerateJwtToken(User user)
+		public async Task<bool> GenerateAndSendMfaCode(string userId, string email)
+		{
+			var code = new Random().Next(100000, 999999).ToString(); // 6-digit
+			var mfa = new TwoFactorCode
+			{
+				UserId = userId,
+				Code = code,
+				ExpiresAt = DateTime.UtcNow.AddMinutes(5)
+			};
+			await _mfaCodes.InsertOneAsync(mfa);
+
+			await _emailService.SendEmailAsync(email, "Your verification code", $"Your code is: <b>{code}</b>");
+
+			return true;
+		}
+
+
+		public string GenerateJwtToken(User user)
 		{
 			var tokenHandler = new JwtSecurityTokenHandler();
 			var key = Encoding.ASCII.GetBytes(_config["Jwt:Key"]);
@@ -96,5 +118,56 @@ namespace backend.Services
 			var token = tokenHandler.CreateToken(tokenDescriptor);
 			return tokenHandler.WriteToken(token);
 		}
+
+		public async Task<User?> GetUserByEmail(string email)
+		{
+			return await _users.Find(u => u.Email == email).FirstOrDefaultAsync();
+		}
+
+		public async Task<User?> GetUserById(string id)
+		{
+			return await _users.Find(u => u.Id == id).FirstOrDefaultAsync();
+		}
+
+		public async Task<bool> VerifyMfaCode(string userId, string code)
+		{
+			var filter = Builders<TwoFactorCode>.Filter.And(
+				Builders<TwoFactorCode>.Filter.Eq(c => c.UserId, userId),
+				Builders<TwoFactorCode>.Filter.Eq(c => c.Code, code),
+				Builders<TwoFactorCode>.Filter.Gt(c => c.ExpiresAt, DateTime.UtcNow)
+			);
+
+			var twoFactor = await _mfaCodes.Find(filter).FirstOrDefaultAsync();
+			if (twoFactor == null)
+			{
+				return false;
+			}
+
+			// Optionally delete the code after successful verification
+			await _mfaCodes.DeleteOneAsync(c => c.Id == twoFactor.Id);
+
+			return true;
+		}
+
+		public async Task<bool> ResendMfaCode(string userId, string email)
+		{
+			var filter = Builders<TwoFactorCode>.Filter.Eq(c => c.UserId, userId);
+			var existingCode = await _mfaCodes.Find(filter).FirstOrDefaultAsync();
+
+			if (existingCode != null && existingCode.SentAt > DateTime.UtcNow.AddMinutes(-1))
+			{
+				// Rate limiting: code sent less than 1 min ago
+				return false;
+			}
+
+			// Remove previous code if exists
+			if (existingCode != null)
+				await _mfaCodes.DeleteOneAsync(c => c.Id == existingCode.Id);
+
+			await GenerateAndSendMfaCode(userId, email);
+			return true;
+		}
+
+
 	}
 }
