@@ -3,11 +3,13 @@ using Microsoft.AspNetCore.Mvc;
 using backend.Models;
 using Microsoft.AspNetCore.Identity.Data;
 using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace backend.Controllers
 {
 	[ApiController]
 	[Route("api/[controller]")]
+	[EnableRateLimiting("auth-policy")]
 	public class AuthController : ControllerBase
 	{
 		private readonly AuthService authService;

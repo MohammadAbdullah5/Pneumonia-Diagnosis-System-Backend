@@ -32,10 +32,6 @@ namespace backend.Services
 				var diagnosisCount2 = await _diagnosisCollection
 	.CountDocumentsAsync(Builders<DiagnosisRequest>.Filter.Eq("UserId", patient.Id.ToString()));
 
-
-				Console.WriteLine(diagnosisCount);
-				Console.WriteLine(diagnosisCount1);
-				Console.WriteLine(diagnosisCount2);
 				result.Add(new
 				{
 					Id = patient.Id,

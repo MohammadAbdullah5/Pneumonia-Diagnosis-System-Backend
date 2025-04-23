@@ -7,6 +7,8 @@ using MongoDB.Driver;
 using System.Text;
 using CloudinaryDotNet;
 using CloudinaryDotNet.Actions;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -66,6 +68,64 @@ builder.Services.AddSingleton<IMongoDatabase>(sp =>
 	var client = new MongoClient(mongoSettings.ConnectionString);
 	return client.GetDatabase(mongoSettings.DatabaseName);
 });
+
+builder.Services.AddRateLimiter(options =>
+{
+	// Fixed window limiter for general requests
+	options.AddPolicy("fixed", httpContext =>
+	{
+		var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+		return RateLimitPartition.Get<string>(ip, _ =>
+			new FixedWindowRateLimiter(new FixedWindowRateLimiterOptions
+			{
+				PermitLimit = 5,
+				Window = TimeSpan.FromMinutes(1),
+				QueueLimit = 2,
+				QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+			}));
+	});
+
+	// Token bucket limiter for authenticated routes
+	options.AddPolicy("auth-policy", httpContext =>
+	{
+		var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+		return RateLimitPartition.Get<string>(ip, _ =>
+			new TokenBucketRateLimiter(new TokenBucketRateLimiterOptions
+			{
+				TokenLimit = 10,
+				TokensPerPeriod = 1,
+				ReplenishmentPeriod = TimeSpan.FromSeconds(30),
+				QueueLimit = 1,
+				QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+				AutoReplenishment = true
+			}));
+	});
+
+	// Sliding window limiter for AI diagnosis routes
+	options.AddPolicy("ai-diagnosis", httpContext =>
+	{
+		var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+		return RateLimitPartition.Get<string>(ip, _ =>
+			new SlidingWindowRateLimiter(new SlidingWindowRateLimiterOptions
+			{
+				PermitLimit = 5,
+				Window = TimeSpan.FromMinutes(1),
+				SegmentsPerWindow = 2,
+				QueueLimit = 1,
+				QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+			}));
+	});
+
+	options.OnRejected = async (context, token) =>
+	{
+		context.HttpContext.Response.StatusCode = 429;
+		await context.HttpContext.Response.WriteAsync("Too many requests. Please try again later.", token);
+	};
+});
+
 builder.Services.AddSingleton<UserService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<AuthService>();
@@ -125,7 +185,7 @@ app.UseHttpsRedirection();
 app.UseCors("AllowFrontend");
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.MapControllers();
-
 app.Run();

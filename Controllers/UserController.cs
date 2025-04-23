@@ -3,11 +3,13 @@ using backend.Services;
 using backend.Models;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace backend.Controllers
 {
 	[ApiController]
 	[Route("api/[controller]")]
+	[EnableRateLimiting("fixed")]
 	public class UserController : ControllerBase
 	{
 		private readonly UserService _userService;

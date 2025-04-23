@@ -7,7 +7,10 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
+using Microsoft.AspNetCore.RateLimiting;
 
+[ApiController]
+[EnableRateLimiting("auth-policy")]
 public class DiagnosisController : ControllerBase
 {
 	private readonly Cloudinary _cloudinary;
@@ -80,6 +83,7 @@ public class DiagnosisController : ControllerBase
 
 	[Authorize]
 	[HttpGet("ai-suggestion/{id}")]
+	[EnableRateLimiting("ai-diagnosis")]
 	public async Task<IActionResult> AnalyzeImage(string id)
 	{
 		try
