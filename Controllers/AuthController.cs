@@ -40,16 +40,16 @@ namespace backend.Controllers
 				IsProfileComplete = false,
 			};
 			var response = await authService.Register(user);
-			return Ok(new {
-				Token = response.Token,
-				User = new
-				{
-					response.Id,
-					response.Name,
-					response.Email,
-					response.Role
-				}
+			// Send MFA code
+			await authService.GenerateAndSendMfaCode(response.Id!, response.Email);
+			return Ok(new
+			{
+				message = "Verification code sent",
+				RequiresMfa = true,
+				UserId = response.Id,
+				Email = response.Email
 			});
+
 		}
 
 		[HttpPost("login")]
