@@ -11,12 +11,16 @@ using Microsoft.AspNetCore.Identity;
 
 namespace backend.Services
 {
-	public class AuthService : Controller
+	public class AuthService
 	{
 		private readonly IMongoCollection<User> _users;
 		private readonly IConfiguration _config;
 		private readonly IMongoCollection<TwoFactorCode> _mfaCodes;
+		private readonly IMongoCollection<LoginAttempt> _attempts;
+		private readonly IMongoCollection<FlaggedIp> _flagIps;
+
 		private readonly IEmailService _emailService;
+
 
 		public AuthService(IOptions<MongoDbSettings> options, IConfiguration config, IEmailService service)
 		{
@@ -26,6 +30,8 @@ namespace backend.Services
 			_mfaCodes = database.GetCollection<TwoFactorCode>("MfaCodes");
 			_config = config;
 			_emailService = service;
+			_attempts = database.GetCollection<LoginAttempt>("LoginAttempts");
+			_flagIps = database.GetCollection<FlaggedIp>("FlaggedIps");
 		}
 
 
@@ -50,6 +56,83 @@ namespace backend.Services
 				Role = user.Role
 			};
 		}
+
+		private readonly int bruteForceThreshold = 20;
+		private readonly TimeSpan bruteForceWindow = TimeSpan.FromMinutes(1);
+
+		public async Task LogLoginAttempt(string email, string ipAddress, bool success)
+		{
+			var attempt = new LoginAttempt
+			{
+				Email = email,
+				IPAddress = ipAddress,
+				AttemptTime = DateTime.UtcNow,
+				IsSuccessful = success
+			};
+
+			await _attempts.InsertOneAsync(attempt);
+
+			// If it's a failed attempt, check for brute-force behavior
+			if (!success)
+			{
+				var recentFailedAttempts = await _attempts
+					.Find(x => x.IPAddress == ipAddress && !x.IsSuccessful && x.AttemptTime >= DateTime.UtcNow - bruteForceWindow)
+					.CountDocumentsAsync();
+
+				if (recentFailedAttempts >= bruteForceThreshold)
+				{
+					await FlagIpAddress(ipAddress, $"Brute-force suspected: {recentFailedAttempts} failed attempts in {bruteForceWindow.TotalMinutes} minutes.");
+				}
+			}
+
+		}
+
+		public async Task<bool> IsIpFlagged(string ip)
+		{
+			// Get all failed login attempts for this IP within the last 1 minute
+			var failedAttempts = await _attempts
+				.Find(x => x.IPAddress == ip && !x.IsSuccessful && x.AttemptTime >= DateTime.UtcNow - bruteForceWindow)
+				.ToListAsync();
+
+			// If there are more than the threshold of failed attempts, the IP is flagged
+			return failedAttempts.Count >= bruteForceThreshold;
+		}
+
+
+
+		public async Task<bool> IsAccountLocked(string email)
+		{
+			var threshold = 10;
+			var window = TimeSpan.FromMinutes(10);
+			var since = DateTime.UtcNow.Subtract(window);
+
+			var failedCount = await _attempts.CountDocumentsAsync(
+				a => a.Email == email && !a.IsSuccessful && a.AttemptTime >= since
+			);
+
+			return failedCount >= threshold;
+		}
+
+		public async Task FlagIpAddress(string ipAddress, string reason)
+		{
+			var existing = await _flagIps.Find(x => x.IpAddress == ipAddress).FirstOrDefaultAsync();
+			if (existing == null)
+			{
+				await _flagIps.InsertOneAsync(new FlaggedIp
+				{
+					IpAddress = ipAddress,
+					Reason = reason,
+					FlaggedAt = DateTime.UtcNow
+				});
+			}
+		}
+
+		public async Task UnflagIpAddress(string ipAddress)
+		{
+			await _flagIps.DeleteOneAsync(x => x.IpAddress == ipAddress);
+		}
+
+
 
 		public async Task<LoginResponse> Register(User user)
 		{
@@ -79,6 +162,12 @@ namespace backend.Services
 		{
 			return HashPassword(inputPassword) == storedPassword;
 		}
+
+		public async Task ClearFailedAttempts(string email)
+		{
+			await _attempts.DeleteManyAsync(a => a.Email == email && !a.IsSuccessful);
+		}
+
 
 		public async Task<bool> GenerateAndSendMfaCode(string userId, string email)
 		{
@@ -168,6 +257,24 @@ namespace backend.Services
 			return true;
 		}
 
+		public async Task<List<LoginAttempt>> GetLoginAttempts()
+		{
+			return _attempts.Find(_ => true).ToList();
+		}
+
+		public async Task<bool> EditDoctorAsync(string email, string newPassword)
+		{
+			var user = await _users.Find(u => u.Role == "doctor").FirstOrDefaultAsync();
+			if (user == null)
+				return false;
+
+			var update = Builders<User>.Update
+				.Set(u => u.Email, email)
+				.Set(u => u.Password, HashPassword(newPassword)); 
+
+			var result = await _users.UpdateOneAsync(u => u.Id == user.Id, update);
+			return result.ModifiedCount > 0;
+		}
 
 	}
 }

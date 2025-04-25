@@ -4,6 +4,7 @@ using backend.Models;
 using Microsoft.AspNetCore.Identity.Data;
 using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.Authorization;
 
 namespace backend.Controllers
 {
@@ -56,12 +57,28 @@ namespace backend.Controllers
 		public async Task<IActionResult> Login([FromBody] LoginRequest login)
 		{
 			var user = await authService.GetUserByEmail(login.Email);
+			var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+			if (ip != "unknown" && await authService.IsIpFlagged(ip))
+			{
+				return StatusCode(403, new { message = "Your IP has been temporarily blocked due to suspicious activity." });
+			}
+
 			var response = await authService.Login(login.Email, login.Password);
 
 			if (user == null || !authService.VerifyPassword(login.Password, user.Password))
 			{
+				await authService.LogLoginAttempt(login.Email, ip, false);
 				return Unauthorized(new { message = "Invalid Credentials" });
 			}
+
+			// Check for account lockout
+			if (await authService.IsAccountLocked(login.Email))
+			{
+				await authService.LogLoginAttempt(login.Email, ip, false);
+
+				return Unauthorized(new { message = "Account temporarily locked due to multiple failed attempts" });
+			}
+
 
 			// Generate MFA code and send it
 			var code = await authService.GenerateAndSendMfaCode(user.Id, user.Email);
@@ -84,6 +101,11 @@ namespace backend.Controllers
 			{
 				return NotFound(new { message = "User not found" });
 			}
+			// Successful MFA verified → log successful login
+			await authService.LogLoginAttempt(user.Email, HttpContext.Connection.RemoteIpAddress?.ToString(), true);
+
+			// ✅ Clear failed attempts now that login is complete
+			await authService.ClearFailedAttempts(user.Email);
 
 			var token = authService.GenerateJwtToken(user);
 
@@ -113,7 +135,6 @@ namespace backend.Controllers
 
 			return Ok(new { message = "Verification code resent" });
 		}
-
 
 		public class VerifyCodeRequest
 		{

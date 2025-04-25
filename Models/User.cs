@@ -18,7 +18,5 @@ namespace backend.Models
 		public int? Age { get; set; }
 		public string? Gender { get; set; }
 		public string MedicalHistory { get; set; }
-		public string? Otp { get; set; }
-		public DateTime? OtpExpiration { get; set; }
 	}
 }

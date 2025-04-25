@@ -140,6 +140,8 @@ builder.Services.AddSingleton(provider =>
 });
 builder.Services.AddScoped<DiagnosisService>();
 builder.Services.AddScoped<DoctorService>();
+builder.Services.AddScoped<AdminService>();
+builder.Services.AddHostedService<FlaggedIpCleanupService>();
 builder.Services.AddSingleton<IMongoCollection<User>>(sp =>
 {
 	var database = sp.GetRequiredService<IMongoDatabase>();
