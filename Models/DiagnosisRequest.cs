@@ -17,6 +17,8 @@ namespace backend.Models
 		public string FinalDiagnosis { get; set; }
 		public DateTime SubmittedAt { get; set; } = DateTime.UtcNow;
 		public DateTime DiagnosedAt { get; set; }
+		public string EncryptedAESKey { get; set; }
+		public string IV { get; set; }
 	}
 
 }

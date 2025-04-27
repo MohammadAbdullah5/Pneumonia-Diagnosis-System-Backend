@@ -43,6 +43,8 @@ namespace backend.Services
 				{ "ImageUrl", 1 },
 				{ "AudioUrl", 1 },
 				{ "Symptoms", 1 },
+				{ "IV", 1 },
+				{ "EncryptedAESKey", 1 },
 				{ "Status", 1 },
 				{ "Remarks", 1 },
 				{ "FinalDiagnosis", 1 },
@@ -57,6 +59,8 @@ namespace backend.Services
 				Id = doc["Id"].AsObjectId.ToString(),
 				UserId = doc["UserId"].AsString,
 				ImageUrl = doc["ImageUrl"].AsString,
+				IV = doc["IV"].AsString,
+				EncryptedAESKey = doc["EncryptedAESKey"].AsString,
 				AudioUrl = doc["AudioUrl"].AsString,
 				Symptoms = doc["Symptoms"].AsString,
 				Status = doc["Status"].AsString,
@@ -81,14 +85,13 @@ namespace backend.Services
 			return diagnosis;
 		}
 
-		public async Task<AIDiagnosisResponse> GetAIAnalysis(string imageUrl)
+		public async Task<AIDiagnosisResponse> GetAIAnalysis(byte[] imageBytes, string signature)
 		{
 			using var httpClient = new HttpClient();
-			var imageBytes = await httpClient.GetByteArrayAsync(imageUrl);
 			using var form = new MultipartFormDataContent();
 
-			var fileExtension = Path.GetExtension(imageUrl).ToLower();
-
+			string fileExtension = ".jpg";
+			
 			// Step 3: Determine the Content-Type based on the file extension
 			string contentType = fileExtension switch
 			{
@@ -101,7 +104,9 @@ namespace backend.Services
 			byteArrayContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(contentType);
 
 			// Add the image file to the form with the key 'file'
-			form.Add(byteArrayContent, "file", Path.GetFileName(imageUrl));
+			form.Add(byteArrayContent, "file", "image" + fileExtension);
+			// ❗ Use the frontend-provided signature
+			httpClient.DefaultRequestHeaders.Add("X-Signature", signature);
 
 			var response = await httpClient.PostAsync("http://localhost:5000/predict", form);
 
@@ -227,6 +232,8 @@ namespace backend.Services
 		public string UserId { get; set; }
 		public string ImageUrl { get; set; }
 		public string AudioUrl { get; set; }
+		public string IV { get; set; }
+		public string EncryptedAESKey { get; set; }
 		public string Symptoms { get; set; }
 		public string Status { get; set; }
 		public string Remarks { get; set; }

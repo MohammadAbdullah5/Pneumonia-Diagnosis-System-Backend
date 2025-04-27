@@ -15,16 +15,24 @@ public class DiagnosisController : ControllerBase
 {
 	private readonly Cloudinary _cloudinary;
 	private readonly DiagnosisService _service;
-	public DiagnosisController(Cloudinary cloudinary, DiagnosisService diagnosisService)
+	private readonly IWebHostEnvironment _env;
+
+	public DiagnosisController(Cloudinary cloudinary, DiagnosisService diagnosisService, IWebHostEnvironment env)
 	{
 		_cloudinary = cloudinary;
 		_service = diagnosisService;
+		_env = env;
 	}
 
 	[Authorize]
 	[HttpPost("submit-diagnosis")]
-	public async Task<IActionResult> SubmitDiagnosis(IFormFile file, string symptoms, string userId, IFormFile audio)
+	public async Task<IActionResult> SubmitDiagnosis([FromForm] DiagnosisRequestDto request)
 	{
+		var file = request.File;
+		var audio = request.Audio;
+		var userId = request.UserId;
+		var symptoms = request.Symptoms;
+
 		var role = User.FindFirst(ClaimTypes.Role)?.Value;
 		if (role != "patient") return Forbid("Access denied. Patients only.");
 
@@ -32,11 +40,15 @@ public class DiagnosisController : ControllerBase
 			return BadRequest(new { message = "No file uploaded." });
 		if (audio == null || audio.Length == 0)
 			return BadRequest(new { message = "Audio file not uploaded." });
+		var allowedExtensions = new[] { ".jpg", ".jpeg", ".png" };
+		var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+		if (!allowedExtensions.Contains(extension))
+			return BadRequest(new { message = "Only JPG, JPEG, PNG files are allowed." });
 
 		try
 		{
 			// Upload the image to Cloudinary
-			var uploadParams = new ImageUploadParams()
+			var uploadParams = new RawUploadParams()
 			{
 				File = new FileDescription(file.FileName, file.OpenReadStream())
 			};
@@ -58,7 +70,9 @@ public class DiagnosisController : ControllerBase
 				AudioUrl = audioUrl,
 				ImageUrl = uploadResult.SecureUrl.ToString(),
 				Symptoms = symptoms,
-				Status = "Pending"
+				Status = "Pending",
+				IV = request.IV,
+				EncryptedAESKey = request.EncryptedAESKey
 			};
 
 			await _service.SaveDiagnosisAsync(diagnosisRequest);
@@ -82,16 +96,25 @@ public class DiagnosisController : ControllerBase
 	}
 
 	[Authorize]
-	[HttpGet("ai-suggestion/{id}")]
+	[HttpPost("ai-suggestion")]
 	[EnableRateLimiting("ai-diagnosis")]
-	public async Task<IActionResult> AnalyzeImage(string id)
+	public async Task<IActionResult> AnalyzeImage([FromForm] IFormFile file, [FromForm] string signature)
 	{
 		try
 		{
 			var role = User.FindFirst(ClaimTypes.Role)?.Value;
 			if (role != "doctor") return Forbid("Access denied. Doctor only.");
-			var diagnosis = await _service.GetById(id);
-			var aiResult = await _service.GetAIAnalysis(diagnosis.ImageUrl);
+			if (file == null || file.Length == 0)
+				return BadRequest("No file uploaded");
+			if (string.IsNullOrEmpty(signature))
+				return BadRequest("Signature missing");
+			byte[] fileBytes;
+			using (var memoryStream = new MemoryStream())
+			{
+				await file.CopyToAsync(memoryStream);
+				fileBytes = memoryStream.ToArray();
+			}
+			var aiResult = await _service.GetAIAnalysis(fileBytes, signature);
 			return Ok(new { Diagnosis = aiResult });
 		}
 		catch (Exception ex)
@@ -159,6 +182,19 @@ public class DiagnosisController : ControllerBase
 		return Ok(reports);
 	}
 
+	[HttpGet("public-key")]
+	public IActionResult GetPublicKey()
+	{
+		var keyPath = Path.Combine(_env.ContentRootPath, "Keys", "doctor_public_key.pem");
+		if (!System.IO.File.Exists(keyPath))
+		{
+			return NotFound("Public key not found.");
+		}
+
+		var publicKey = System.IO.File.ReadAllText(keyPath);
+		return Ok(publicKey);
+	}
+
 
 	public class SubmitDiagnosisDto
 	{
@@ -167,4 +203,13 @@ public class DiagnosisController : ControllerBase
 		public string Remarks { get; set; }
 	}
 
+	public class DiagnosisRequestDto
+	{
+		public string Symptoms { get; set; }
+		public string UserId { get; set; }
+		public IFormFile File { get; set; }
+		public IFormFile Audio { get; set; }
+		public string EncryptedAESKey { get; set; }
+		public string IV { get; set; }
+	}
 }
