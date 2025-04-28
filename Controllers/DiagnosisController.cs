@@ -10,7 +10,6 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.RateLimiting;
 
 [ApiController]
-[EnableRateLimiting("auth-policy")]
 public class DiagnosisController : ControllerBase
 {
 	private readonly Cloudinary _cloudinary;
@@ -25,6 +24,7 @@ public class DiagnosisController : ControllerBase
 	}
 
 	[Authorize]
+	[EnableRateLimiting("auth-policy")]
 	[HttpPost("submit-diagnosis")]
 	public async Task<IActionResult> SubmitDiagnosis([FromForm] DiagnosisRequestDto request)
 	{
@@ -86,6 +86,7 @@ public class DiagnosisController : ControllerBase
 	}
 
 	[Authorize]
+	[EnableRateLimiting("auth-policy")]
 	[HttpGet("pending")]
 	public async Task<IActionResult> GetPending()
 	{
@@ -96,6 +97,7 @@ public class DiagnosisController : ControllerBase
 	}
 
 	[Authorize]
+	[EnableRateLimiting("ai-diagnosis")]
 	[HttpPost("ai-suggestion")]
 	public async Task<IActionResult> AnalyzeImage([FromForm] IFormFile file, [FromForm] string signature)
 	{
@@ -117,6 +119,7 @@ public class DiagnosisController : ControllerBase
 	}
 
 	[Authorize]
+	[EnableRateLimiting("auth-policy")]
 	[HttpPost("submit")]
 	public async Task<IActionResult> SubmitDoctorDiagnosis([FromBody] SubmitDiagnosisDto dto)
 	{
@@ -135,8 +138,9 @@ public class DiagnosisController : ControllerBase
 		}
 	}
 
-	[HttpGet("my-reports")]
 	[Authorize]
+	[EnableRateLimiting("auth-policy")]
+	[HttpGet("my-reports")]
 	public async Task<IActionResult> GetMyDiagnosedReports()
 	{
 		try
@@ -166,6 +170,9 @@ public class DiagnosisController : ControllerBase
 		}
 	}
 
+
+	[Authorize]
+	[EnableRateLimiting("auth-policy")]
 	[HttpGet("reports")]
 	public async Task<IActionResult> GetDiagnosisReports()
 	{

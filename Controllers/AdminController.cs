@@ -1,6 +1,8 @@
 ﻿using backend.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using System.Security.Claims;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -14,9 +16,12 @@ public class AdminController : ControllerBase
 		_adminService = adminService;
 	}
 
+	[Authorize]
 	[HttpGet("login-attempts")]
 	public async Task<IActionResult> GetLoginAttempts()
 	{
+		var role = User.FindFirst(ClaimTypes.Role)?.Value;
+		if (role != "admin") return Forbid("Access denied! Admin only.");
 		var attempts = await _adminService.GetLoginAttempts();
 		return Ok(attempts);
 	}
