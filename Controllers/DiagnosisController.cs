@@ -97,7 +97,6 @@ public class DiagnosisController : ControllerBase
 
 	[Authorize]
 	[HttpPost("ai-suggestion")]
-	[EnableRateLimiting("ai-diagnosis")]
 	public async Task<IActionResult> AnalyzeImage([FromForm] IFormFile file, [FromForm] string signature)
 	{
 		try
@@ -108,13 +107,7 @@ public class DiagnosisController : ControllerBase
 				return BadRequest("No file uploaded");
 			if (string.IsNullOrEmpty(signature))
 				return BadRequest("Signature missing");
-			byte[] fileBytes;
-			using (var memoryStream = new MemoryStream())
-			{
-				await file.CopyToAsync(memoryStream);
-				fileBytes = memoryStream.ToArray();
-			}
-			var aiResult = await _service.GetAIAnalysis(fileBytes, signature);
+			var aiResult = await _service.GetAIAnalysis(file, signature);
 			return Ok(new { Diagnosis = aiResult });
 		}
 		catch (Exception ex)

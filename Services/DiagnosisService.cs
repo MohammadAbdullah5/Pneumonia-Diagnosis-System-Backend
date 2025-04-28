@@ -85,7 +85,7 @@ namespace backend.Services
 			return diagnosis;
 		}
 
-		public async Task<AIDiagnosisResponse> GetAIAnalysis(byte[] imageBytes, string signature)
+		public async Task<AIDiagnosisResponse> GetAIAnalysis(IFormFile file, string signature)
 		{
 			using var httpClient = new HttpClient();
 			using var form = new MultipartFormDataContent();
@@ -100,14 +100,11 @@ namespace backend.Services
 				_ => throw new Exception("Unsupported image format")
 			};
 
-			var byteArrayContent = new ByteArrayContent(imageBytes);
-			byteArrayContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(contentType);
 
 			// Add the image file to the form with the key 'file'
-			form.Add(byteArrayContent, "file", "image" + fileExtension);
+			form.Add(new StreamContent(file.OpenReadStream()), "file", "image" + fileExtension);
 			// ❗ Use the frontend-provided signature
 			httpClient.DefaultRequestHeaders.Add("X-Signature", signature);
-
 			var response = await httpClient.PostAsync("http://localhost:5000/predict", form);
 
 			if (!response.IsSuccessStatusCode)
