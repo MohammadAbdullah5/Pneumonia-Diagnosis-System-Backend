@@ -33,6 +33,12 @@ namespace backend.Controllers
 				return BadRequest(new { message = "User already exists" });
 			}
 
+			// Validate password strength
+    		if (!IsValidPassword(request.Password))
+    		{
+    		    return BadRequest(new { message = "Password does not meet the required strength" });
+    		}
+
 			var user = new User
 			{
 				Email = request.Email,
@@ -134,6 +140,35 @@ namespace backend.Controllers
 			var result = await authService.ResendMfaCode(request.UserId, request.Email);
 
 			return Ok(new { message = "Verification code resent" });
+		}
+
+		private bool IsValidPassword(string password)
+		{
+		    if (string.IsNullOrEmpty(password))
+		        return false;
+
+		    // Password must be at least 8 characters long
+		    if (password.Length < 8)
+		        return false;
+
+		    // Check for at least one lowercase letter
+		    if (!password.Any(char.IsLower))
+		        return false;
+
+		    // Check for at least one uppercase letter
+		    if (!password.Any(char.IsUpper))
+		        return false;
+
+		    // Check for at least one digit
+		    if (!password.Any(char.IsDigit))
+		        return false;
+
+		    // Check for at least one special character
+		    var specialCharacters = "!@#$%^&*()_+[]{}|;:,.<>?/";
+		    if (!password.Any(ch => specialCharacters.Contains(ch)))
+		        return false;
+
+		    return true;
 		}
 
 		public class VerifyCodeRequest
